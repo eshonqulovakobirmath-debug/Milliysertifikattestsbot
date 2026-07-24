@@ -5,14 +5,15 @@ import os
 import pandas as pd
 from datetime import datetime, timedelta
 
-# Muhit o'zgaruvchilari
-TOKEN = os.environ.get('8954403610:AAFqfr5wenWMk8hZf8u9QTOqmsm-emL-Xsw')
-ADMIN_ID = int(os.environ.get('5541008041', 0))
+# Muhit o'zgaruvchilari (To'g'rilangan)
+TOKEN = os.environ.get('BOT_TOKEN', '8954403610:AAFqfr5wenWMk8hZf8u9QTOqmsm-emL-Xsw')
+ADMIN_ID = int(os.environ.get('ADMIN_ID', 5541008041))
 CHANNEL_USERNAME = "@eshonqulov_math"
 
 bot = telebot.TeleBot(TOKEN)
 user_data = {}
 
+# Ma'lumotlar bazasi manzili
 DB_DIR = '/app/data' if os.path.exists('/app/data') else '.'
 DB_PATH = os.path.join(DB_DIR, 'test_system.db')
 
@@ -47,12 +48,12 @@ def init_db():
             test_code TEXT,
             correct_count INTEGER,
             qobiliyat REAL,       
-            score REAL,           
+            score REAL,            
             foiz TEXT,            
-            grade TEXT,           
+            grade TEXT,            
             majburiy REAL,        
-            fan_1 REAL,           
-            fan_2 REAL,           
+            fan_1 REAL,            
+            fan_2 REAL,            
             submitted_at DATETIME 
         )
     ''')
@@ -61,7 +62,7 @@ def init_db():
 
 conn, cursor = init_db()
 
-# Rasm-1 dagi menyu buyruqlarini sozlash
+# Menyu buyruqlarini sozlash
 bot.set_my_commands([
     types.BotCommand("/start", "Botni qayta ishga tushirish"),
     types.BotCommand("/edit", "Ismni o'zgartirish uchun bosing"),
@@ -123,7 +124,6 @@ def verify_subscription(call):
         bot.answer_callback_query(call.id, "❌ Siz hali obuna bo'lmadingiz!", show_alert=True)
 
 # --- 3. YANGI INLINE MENYULAR (Buyruqlar) ---
-
 @bot.message_handler(commands=['edit'])
 def change_name(message):
     msg = bot.send_message(message.chat.id, "Yangi ism va familiyangizni kiriting:")
@@ -133,7 +133,6 @@ def change_name(message):
 def bot_info(message):
     bot.send_message(message.chat.id, "ℹ️ Ushbu bot DTM va Milliy Sertifikat standartlariga moslashtirilgan testlarni yaratish, yechish va chuqur diagnostika qilish uchun mo'ljallangan.")
 
-# Rasm-2 dagi dizayn: /app buyrug'i uchun
 @bot.message_handler(commands=['app'])
 def app_menu(message):
     cursor.execute('SELECT full_name FROM users WHERE user_id = ?', (message.from_user.id,))
@@ -150,7 +149,6 @@ def app_menu(message):
     markup.add(types.InlineKeyboardButton("⚡️ Test yaratish ⚡️", callback_data="action_create_app"))
     bot.send_message(message.chat.id, text, reply_markup=markup)
 
-# /ms buyrug'i uchun
 @bot.message_handler(commands=['ms'])
 def ms_menu(message):
     cursor.execute('SELECT full_name FROM users WHERE user_id = ?', (message.from_user.id,))
@@ -166,7 +164,6 @@ def ms_menu(message):
     markup.add(types.InlineKeyboardButton("⚡️ Test yaratish ⚡️", callback_data="action_create_ms"))
     bot.send_message(message.chat.id, text, reply_markup=markup)
 
-# Inline tugmalar bosilganda ishlovchi funksiyalar
 @bot.callback_query_handler(func=lambda call: call.data in ["action_solve_app", "action_solve_ms"])
 def callback_solve(call):
     msg = bot.send_message(call.message.chat.id, "📝 Javoblarni tekshirish uchun test kodini kiriting:")
@@ -231,7 +228,6 @@ def process_ms_rasch(message):
     mode_map = {"To'liq Rasch": 'full', "Hamtest Rasch": 'half', "Oddiy": 'none'}
     user_data[message.chat.id]['rasch_mode'] = mode_map.get(message.text, 'none')
     save_test_to_db(message.chat.id)
-    # Model kiritilgach, keyboard'ni tozalab qo'yamiz
     bot.send_message(message.chat.id, "Tasdiqlanmoqda...", reply_markup=types.ReplyKeyboardRemove())
 
 def save_test_to_db(chat_id):
@@ -334,7 +330,6 @@ def my_results(message):
         bot.send_message(message.chat.id, "Siz hali test ishlamagansiz.")
 
 # --- 8. ADMIN KONDANDALARI ---
-# Excel natija olish uchun: /admin_natija
 @bot.message_handler(commands=['admin_natija'])
 def admin_results(message):
     msg = bot.send_message(message.chat.id, "Siz kiritgan test kodini yozing:")
