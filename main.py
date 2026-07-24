@@ -6,8 +6,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 # Muhit o'zgaruvchilari
-TOKEN = os.environ.get('BOT_TOKEN')
-ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
+TOKEN = os.environ.get('8954403610:AAFqfr5wenWMk8hZf8u9QTOqmsm-emL-Xsw')
+ADMIN_ID = int(os.environ.get('5541008041', 0))
 CHANNEL_USERNAME = "@eshonqulov_math"
 
 bot = telebot.TeleBot(TOKEN)
