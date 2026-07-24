@@ -75,6 +75,10 @@ bot.set_my_commands([
 
 # --- 2. MAJBURIY OBUNA VA RO'YXATDAN O'TISH ---
 def is_subscribed(user_id):
+    # Agar foydalanuvchi Admin bo'lsa, tekshirmasdan o'tkazib yuborish
+    if user_id == ADMIN_ID:
+        return True
+        
     try:
         status = bot.get_chat_member(CHANNEL_USERNAME, user_id).status
         return status in ['member', 'administrator', 'creator']
@@ -392,4 +396,3 @@ def process_admin_results(message):
 if __name__ == '__main__':
     print("Bot ishga tushmoqda...")
     bot.polling(none_stop=True)
-# test uchun
