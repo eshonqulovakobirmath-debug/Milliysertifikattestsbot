@@ -42,18 +42,29 @@ conn, cursor = init_db()
 cancel_markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
 cancel_markup.add("🔙 Bekor qilish")
 
+def get_webapp_keyboard(url):
+    """Web App'dan ma'lumot qaytishi uchun maxsus pastki klaviatura yaratish"""
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(types.KeyboardButton("📝 Javoblarni Kiritish", web_app=types.WebAppInfo(url=url)))
+    markup.add("🔙 Asosiy Menyu")
+    return markup
+
 def check_cancel(message):
     """Foydalanuvchi bekor qilishni bossa yoki buyruq yuborsa, jarayonni to'xtatish."""
-    if message.text in ["🔙 Bekor qilish", "/start", "/edit", "/info"]:
+    if message.text in ["🔙 Bekor qilish", "🔙 Asosiy Menyu", "/start", "/edit", "/info"]:
         bot.send_message(message.chat.id, "🛑 <b>Amal bekor qilindi.</b>", reply_markup=types.ReplyKeyboardRemove())
-        if message.text.startswith('/'):
-            if message.text == '/start': start_command(message)
-            elif message.text == '/edit': edit_command(message)
-            elif message.text == '/info': info_command(message)
+        if message.text == '/start': start_command(message)
+        elif message.text == '/edit': edit_command(message)
+        elif message.text == '/info': info_command(message)
         else:
-            bot.send_message(message.chat.id, "Asosiy menyuga qaytish uchun /start ni bosing.")
+            bot.send_message(message.chat.id, "👇 Asosiy menyu:", reply_markup=get_main_inline_menu(message.from_user.id))
         return True
     return False
+
+@bot.message_handler(func=lambda msg: msg.text in ["🔙 Bekor qilish", "🔙 Asosiy Menyu"])
+def handle_back_buttons(message):
+    bot.send_message(message.chat.id, "Qaytish...", reply_markup=types.ReplyKeyboardRemove()).delete()
+    start_command(message)
 
 # --- BUYRUQLAR (MENU) ---
 bot.set_my_commands([
@@ -96,35 +107,49 @@ def is_subscribed(user_id):
     try:
         status = bot.get_chat_member(CHANNEL_USERNAME, user_id).status
         return status in ['member', 'administrator', 'creator']
-    except:
+    except Exception:
+        # Agar bot kanalda admin bo'lmasa xato beradi. Shuning uchun obunani tekshirishdan oldin admin qilish shart.
         return False
 
 def check_auth(message):
     user_id = message.from_user.id
+    
+    # 1. Avval ism-familiya kiritilganligini tekshiramiz
+    cursor.execute('SELECT full_name FROM users WHERE user_id = ?', (user_id,))
+    user = cursor.fetchone()
+    if not user:
+        msg = bot.send_message(message.chat.id, "👤 <b>Iltimos, ism va familiyangizni kiriting:</b>\n<i>(Masalan: Eshonqulov Akobir)</i>", reply_markup=types.ReplyKeyboardRemove())
+        bot.register_next_step_handler(msg, register_user)
+        return False
+        
+    # 2. Keyin obunani tekshiramiz
     if not is_subscribed(user_id):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("➕ Obuna bo'lish", url=f"https://t.me/{CHANNEL_USERNAME[1:]}"))
         markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_sub"))
-        bot.send_message(message.chat.id, "⚠️ <b>Botdan foydalanish uchun kanalga obuna bo'ling!</b>", reply_markup=markup)
+        bot.send_message(message.chat.id, "⚠️ <b>Botdan foydalanish uchun avval kanalimizga obuna bo'lishingiz kerak!</b>", reply_markup=markup)
         return False
-    
-    cursor.execute('SELECT full_name FROM users WHERE user_id = ?', (user_id,))
-    user = cursor.fetchone()
-    if not user:
-        msg = bot.send_message(message.chat.id, "👤 <b>Iltimos, botdan foydalanish uchun ism va familiyangizni kiriting</b>\n<i>(Masalan: Eshonqulov Akobir):</i>", reply_markup=types.ReplyKeyboardRemove())
-        bot.register_next_step_handler(msg, register_user)
-        return False
+        
     return True
 
 def register_user(message):
-    if message.text.startswith('/'):
-        msg = bot.send_message(message.chat.id, "❌ Iltimos, buyruq kiritmang. Haqiqiy ism va familiyangizni yozing:")
+    if message.text in ["🔙 Bekor qilish", "🔙 Asosiy Menyu"] or message.text.startswith('/'):
+        msg = bot.send_message(message.chat.id, "❌ Iltimos, buyruq kiritmang. Faqat haqiqiy ism va familiyangizni yozing:")
         bot.register_next_step_handler(msg, register_user)
         return
 
     cursor.execute('INSERT OR REPLACE INTO users (user_id, full_name) VALUES (?, ?)', (message.from_user.id, message.text))
     conn.commit()
-    bot.send_message(message.chat.id, f"✅ <b>Xush kelibsiz, {message.text}!</b>\nQuyidagi menyudan kerakli bo'limni tanlang:", reply_markup=get_main_inline_menu(message.from_user.id))
+    
+    # Ism saqlangach, darhol obunani tekshiramiz
+    if not is_subscribed(message.from_user.id):
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("➕ Obuna bo'lish", url=f"https://t.me/{CHANNEL_USERNAME[1:]}"))
+        markup.add(types.InlineKeyboardButton("✅ Tekshirish", callback_data="check_sub"))
+        bot.send_message(message.chat.id, f"✅ <b>Xush kelibsiz, {message.text}!</b>\n\n⚠️ Botdan to'liq foydalanish uchun kanalimizga obuna bo'ling:", reply_markup=markup)
+    else:
+        bot.send_message(message.chat.id, f"✅ <b>Xush kelibsiz, {message.text}!</b>\nQuyidagi menyudan kerakli bo'limni tanlang:", reply_markup=get_main_inline_menu(message.from_user.id))
+
 
 # --- ASOSIY BUYRUQLAR ---
 @bot.message_handler(commands=['start'])
@@ -144,12 +169,20 @@ def info_command(message):
 
 @bot.callback_query_handler(func=lambda call: call.data == "check_sub")
 def check_sub_callback(call):
-    if is_subscribed(call.from_user.id):
+    user_id = call.from_user.id
+    if is_subscribed(user_id):
         bot.delete_message(call.message.chat.id, call.message.message_id)
-        if check_auth(call.message):
-            bot.send_message(call.message.chat.id, "✅ Obuna tasdiqlandi!", reply_markup=get_main_inline_menu(call.from_user.id))
+        
+        cursor.execute('SELECT full_name FROM users WHERE user_id = ?', (user_id,))
+        user = cursor.fetchone()
+        
+        if user:
+            bot.send_message(call.message.chat.id, "✅ Obuna tasdiqlandi! Qanday yordam bera olaman?", reply_markup=get_main_inline_menu(user_id))
+        else:
+            msg = bot.send_message(call.message.chat.id, "👤 <b>Iltimos, ism va familiyangizni kiriting:</b>", reply_markup=types.ReplyKeyboardRemove())
+            bot.register_next_step_handler(msg, register_user)
     else:
-        bot.answer_callback_query(call.id, "❌ Hali obuna bo'lmadingiz!", show_alert=True)
+        bot.answer_callback_query(call.id, "❌ Hali obuna bo'lmadingiz! Kanalga a'zo bo'lib, qayta 'Tekshirish'ni bosing.", show_alert=True)
 
 # --- ICHMA-ICH MENYULARNI BOSHQARISH ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("menu_"))
@@ -205,7 +238,7 @@ def menu_navigation(call):
         bot.register_next_step_handler(msg, process_html_code)
 
 
-# --- TEST YECHISH ---
+# --- TEST YECHISH (Web App bu yerda klaviatura orqali ochiladi) ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("solve_"))
 def ask_solve_code(call):
     bot.delete_message(call.message.chat.id, call.message.message_id)
@@ -238,34 +271,30 @@ def process_solve_test(message):
         return
 
     test_type, html_link, has_file, test_name, subject, file_id = test[0], test[1], test[2], test[3], test[4], test[5]
-    
-    # Klaviatura orqaga qaytishni tozalash
-    bot.send_message(message.chat.id, "Yuklanmoqda...", reply_markup=types.ReplyKeyboardRemove()).delete()
 
     if test_type == 'html':
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🌐 Testni ishlash", web_app=types.WebAppInfo(url=f"{html_link}?user_id={message.from_user.id}")))
-        markup.add(types.InlineKeyboardButton("🔙 Asosiy Menyu", callback_data="menu_main"))
-        bot.send_message(message.chat.id, f"📝 <b>Maxsus HTML Test topildi!</b>\nKod: <code>{code}</code>", reply_markup=markup)
+        url = f"{html_link}?user_id={message.from_user.id}"
+        markup = get_webapp_keyboard(url)
+        bot.send_message(message.chat.id, f"📝 <b>Maxsus HTML Test topildi!</b>\nKod: <code>{code}</code>\n\n👇 <b>Pastdagi tugma</b> orqali testni ishlashni boshlang.", reply_markup=markup)
         return
 
+    # MINI APP URL
     mini_app_url = f"{NETLIFY_APP_URL}/?test_code={code}&user_id={message.from_user.id}&type={test_type}"
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("📝 Javoblarni Kiritish", web_app=types.WebAppInfo(url=mini_app_url)))
-    markup.add(types.InlineKeyboardButton("🔙 Asosiy Menyu", callback_data="menu_main"))
+    markup = get_webapp_keyboard(mini_app_url)
 
-    if not has_file:
-        bot.send_message(message.chat.id, f"✅ <b>{subject} - {test_name}</b> topildi.\n(Faylsiz test).\n\nJavoblarni kiritish uchun tugmani bosing:", reply_markup=markup)
-    else:
+    if has_file:
         try:
-            bot.send_document(message.chat.id, file_id, caption=f"✅ <b>{test_name}</b>\nFaylni ochib ishlang va javoblarni kiriting.", reply_markup=markup)
+            bot.send_document(message.chat.id, file_id, caption=f"✅ <b>{test_name}</b>\nFaylni ochib ishlang.")
         except:
-            bot.send_photo(message.chat.id, file_id, caption=f"✅ <b>{test_name}</b>\nRasm orqali ishlab, javoblaringizni yozing.", reply_markup=markup)
+            bot.send_photo(message.chat.id, file_id, caption=f"✅ <b>{test_name}</b>\nRasm orqali ishlang.")
+    
+    # Muhim xabar WebApp tugmasi joylashgan klaviatura bilan yuboriladi
+    bot.send_message(message.chat.id, "👇 Javoblarni kiritish uchun pastdagi <b>'📝 Javoblarni Kiritish'</b> tugmasini bosing:", reply_markup=markup)
 
 # --- WEB APP MA'LUMOTLARINI QABUL QILISH ---
 @bot.message_handler(content_types=['web_app_data'])
 def handle_web_app_data(message):
-    """Mini app dan qaytgan javoblar va ballarni bazaga saqlaydi va foydalanuvchiga xabar beradi."""
+    """Mini app dan qaytgan javoblar aynan shu yerdan tutiladi va bazaga saqlanadi."""
     try:
         data = json.loads(message.web_app_data.data)
         
@@ -286,7 +315,6 @@ def handle_web_app_data(message):
                        (message.from_user.id, test_code, correct_count, qobiliyat, score, foiz, grade, majburiy, fan_1, fan_2, submitted_at))
         conn.commit()
 
-        # Test turiga qarab foydalanuvchiga chiroyli javob ko'rsatamiz
         cursor.execute('SELECT test_type FROM tests WHERE test_code = ?', (test_code,))
         test_type_data = cursor.fetchone()
         t_type = test_type_data[0] if test_type_data else 'normal'
@@ -304,10 +332,12 @@ def handle_web_app_data(message):
                         f"🎯 To'g'ri javoblar: <b>{correct_count}</b> ta\n"
                         f"🏆 Ball: <b>{score}</b>")
 
-        bot.send_message(message.chat.id, msg_text, reply_markup=get_main_inline_menu(message.from_user.id))
+        bot.send_message(message.chat.id, msg_text, reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(message.chat.id, "👇 Asosiy menyu:", reply_markup=get_main_inline_menu(message.from_user.id))
 
     except Exception as e:
-        bot.send_message(message.chat.id, "❌ Javoblarni tahlil qilishda xatolik yuz berdi. Iltimos qayta urinib ko'ring.", reply_markup=get_main_inline_menu(message.from_user.id))
+        bot.send_message(message.chat.id, "❌ Javoblarni tahlil qilishda xatolik yuz berdi. Iltimos qayta urinib ko'ring.", reply_markup=types.ReplyKeyboardRemove())
+        bot.send_message(message.chat.id, "👇 Asosiy menyu:", reply_markup=get_main_inline_menu(message.from_user.id))
 
 
 # --- TEST YARATISH ---
@@ -377,10 +407,9 @@ def create_test_deadline(message):
             bot.register_next_step_handler(msg, create_test_deadline)
             return
 
-    # Rasch mode ni so'ramasdan avtomatik to'liq Rasch (full) saqlaymiz. Oddiy test uchun o'zimiz moslashtiramiz
+    # Avtomatik to'liq Rasch (full) saqlaymiz.
     data['rasch_mode'] = 'full'
     
-    bot.send_message(message.chat.id, "⏳ Saqlanmoqda...", reply_markup=types.ReplyKeyboardRemove()).delete()
     finalize_test_creation(message.chat.id)
 
 def finalize_test_creation(chat_id):
@@ -422,15 +451,13 @@ def get_test_from_baza(call):
     bot.delete_message(call.message.chat.id, call.message.message_id)
     process_solve_test(call.message)
 
-# --- NATIJA OLIH VA EXCEL ---
+# --- NATIJA OLISH VA EXCEL ---
 def process_get_results(message):
     if check_cancel(message): return
     code = message.text
     cursor.execute('SELECT creator_id, test_type FROM tests WHERE test_code = ?', (code,))
     test = cursor.fetchone()
     
-    bot.send_message(message.chat.id, "Yuklanmoqda...", reply_markup=types.ReplyKeyboardRemove()).delete()
-
     if not test:
         bot.send_message(message.chat.id, "❌ Bunday kod topilmadi.", reply_markup=get_main_inline_menu(message.from_user.id))
         return
@@ -446,7 +473,6 @@ def process_get_results(message):
                           WHERE r.test_code = ? ORDER BY r.score DESC''', (code,))
         res = cursor.fetchall()
         if res:
-            # Reyting raqamini qo'shib chiqamiz
             formatted_res = []
             for i, r in enumerate(res, 1):
                 formatted_res.append((i,) + r)
@@ -470,7 +496,6 @@ def process_get_results(message):
         if res:
             text = f"📊 <b>{code}</b> - Natijalar ro'yxati:\n\n"
             for i, r in enumerate(res, 1):
-                # Oddiy testda to'g'ri javoblar va yonida bal yoziladi
                 text += f"<b>{i}.</b> 👤 {r[0]} | ✅: {r[1]} ta | 🏆: {r[2]:.1f} ball\n"
             bot.send_message(message.chat.id, text, reply_markup=get_main_inline_menu(message.from_user.id))
         else:
@@ -486,7 +511,6 @@ def process_html_code(message):
 def process_html_link(message):
     if check_cancel(message): return
     data = user_states.get(message.chat.id)
-    bot.send_message(message.chat.id, "Saqlanmoqda...", reply_markup=types.ReplyKeyboardRemove()).delete()
     
     try:
         cursor.execute('''INSERT INTO tests (test_code, creator_id, test_type, test_name, has_file, html_link)
